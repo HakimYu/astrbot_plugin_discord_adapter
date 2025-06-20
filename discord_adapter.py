@@ -48,8 +48,8 @@ class DiscordAdapter(Platform):
     async def convert_message(self, message: discord.Message) -> AstrBotMessage:
         abm = AstrBotMessage()
         # 判断是群聊还是私聊
-        abm.type = MessageType.GROUP_MESSAGE if isinstance(message.channel, discord.TextChannel) else MessageType.FRIEND_MESSAGE
-        abm.group_id = str(message.guild.id) if message.guild else ""
+        abm.type = MessageType.FRIEND_MESSAGE if isinstance(message.channel, discord.DMChannel) else MessageType.GROUP_MESSAGE
+        abm.group_id = str(message.guild.id) if message.guild and hasattr(message.guild, 'id') else ""
         abm.message_str = message.content
         abm.sender = MessageMember(
             user_id=str(message.author.id),
@@ -71,4 +71,5 @@ class DiscordAdapter(Platform):
             session_id=message.session_id,
             client=self.bot
         )
+        logger.info(f"收到消息: {message}")
         self.commit_event(message_event)
