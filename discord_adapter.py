@@ -8,6 +8,7 @@ from astrbot.api.event import MessageChain
 from astrbot.core.platform.astr_message_event import MessageSesion
 from astrbot import logger
 from .discord_event import DiscordEvent
+from astrbot.api.message_components import Plain, At
 
 
 @register_platform_adapter("discord", "Discord 消息平台适配器", default_config_tmpl={
@@ -55,8 +56,29 @@ class DiscordAdapter(Platform):
             user_id=str(message.author.id),
             nickname=message.author.name
         )
-        from astrbot.api.message_components import Plain
-        abm.message = [Plain(text=message.content)]
+        # --- at 解析增强 ---
+        content = message.content
+        chain = []
+        last_idx = 0
+        # 按出现顺序处理 mentions
+        for m in message.mentions:
+            mention_str = f"<@{m.id}>"
+            idx = content.find(mention_str, last_idx)
+            if idx == -1:
+                continue
+            # 前面的文本
+            if idx > last_idx:
+                chain.append(Plain(text=content[last_idx:idx]))
+            # at 组件
+            chain.append(At(qq=str(m.id), name=m.display_name if hasattr(m, 'display_name') else m.name))
+            last_idx = idx + len(mention_str)
+        # 剩余文本
+        if last_idx < len(content):
+            chain.append(Plain(text=content[last_idx:]))
+        # 如果没有 at，全部为 Plain
+        if not chain:
+            chain = [Plain(text=content)]
+        abm.message = chain
         abm.raw_message = message
         abm.self_id = str(self.bot.user.id) if self.bot.user else ""
         abm.session_id = str(message.channel.id)
