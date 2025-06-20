@@ -36,43 +36,51 @@ class DiscordAdapter(Platform):
 
     async def convert_discord_message_to_components(self, message: discord.Message) -> list:
         """将 Discord 消息转换为 AstrBot 消息组件列表"""
-        logger.info(f"messagecontent: {message.content}")
         components = []
 
         # 处理回复
         if message.reference and isinstance(message.reference.resolved, discord.Message):
+            replied_msg = message.reference.resolved
             components.append(
-                Reply(message_id=str(message.reference.message_id)))
+                Reply(
+                    id=str(message.reference.message_id),
+                    sender_id=str(replied_msg.author.id),
+                    sender_nickname=replied_msg.author.name,
+                    time=int(replied_msg.created_at.timestamp()),
+                    message_str=replied_msg.content,
+                    text=replied_msg.content,
+                    qq=str(replied_msg.author.id),
+                ))
 
         # 处理文本内容和提及
         if message.content:
-            current_text = ""
-            for index, char in enumerate(message.content):
-                # 检查这个位置是否在任何提及的范围内
-                is_mention = False
-                for mention in message.mentions:
-                    mention_str = f"<@{mention.id}>"
-                    pos = message.content.find(
-                        mention_str, max(0, index - len(mention_str)))
-                    if pos <= index < pos + len(mention_str):
-                        if current_text:
-                            components.append(Plain(text=current_text))
-                            current_text = ""
-                        if not any(isinstance(x, At) and x.user_id == str(mention.id) for x in components):
-                            components.append(At(user_id=str(mention.id)))
-                        is_mention = True
-                        break
-
-                if not is_mention:
-                    current_text += char
-            if current_text:
-                components.append(Plain(text=current_text))
+            content = message.content
+            last_idx = 0
+            # 按出现顺序处理 mentions
+            for m in message.mentions:
+                mention_str = f"<@{m.id}>"
+                idx = content.find(mention_str, last_idx)
+                if idx == -1:
+                    continue
+                # 前面的文本
+                if idx > last_idx:
+                    components.append(Plain(text=content[last_idx:idx]))
+                # at 组件
+                components.append(At(qq=str(m.id)))
+                last_idx = idx + len(mention_str)
+            # 剩余文本
+            if last_idx < len(content):
+                components.append(Plain(text=content[last_idx:]))
+            # 如果没有任何内容，添加原始文本
+            if not components or (len(components) == 1 and isinstance(components[0], Reply)):
+                components.append(Plain(text=content))
 
         # 处理附件（图片等）
         for attachment in message.attachments:
             if attachment.content_type and attachment.content_type.startswith('image/'):
                 components.append(Image(file=attachment.url))
 
+        logger.info(f"components: {components}")
         return components
 
     async def send_by_session(self, session: MessageSesion, message_chain: MessageChain):
@@ -116,5 +124,4 @@ class DiscordAdapter(Platform):
             session_id=message.session_id,
             client=self.bot
         )
-        logger.info(f"收到消息: {message}")
         self.commit_event(message_event)
